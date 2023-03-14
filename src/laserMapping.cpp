@@ -115,6 +115,7 @@ PointCloudXYZI::Ptr _featsArray;
 
 pcl::VoxelGrid<PointType> downSizeFilterSurf;
 pcl::VoxelGrid<PointType> downSizeFilterMap;
+// PointCloudXYZI::Ptr latest2min_map_downsample; 
 
 KD_TREE<PointType> ikdtree;
 
@@ -135,6 +136,8 @@ nav_msgs::Path path;
 nav_msgs::Odometry odomAftMapped;
 geometry_msgs::Quaternion geoQuat;
 geometry_msgs::PoseStamped msg_body_pose;
+
+ros::Publisher pub_2mins_Map; 
 
 shared_ptr<Preprocess> p_pre(new Preprocess());
 shared_ptr<ImuProcess> p_imu(new ImuProcess());
@@ -508,13 +511,27 @@ void publish_frame_world(const ros::Publisher & pubLaserCloudFull)
                                 &laserCloudWorld->points[i]);
         }
         *pcl_wait_save += *laserCloudWorld;
+         
+
+        if(pub_2mins_Map.getNumSubscribers() != 0){
+            downSizeFilterMap.setInputCloud(pcl_wait_save);
+            downSizeFilterMap.filter(*pcl_wait_save);
+            
+            sensor_msgs::PointCloud2 laserCloudmsg_2min;
+            pcl::toROSMsg(*pcl_wait_save, laserCloudmsg_2min);
+            laserCloudmsg_2min.header.stamp = ros::Time().fromSec(lidar_end_time);
+            laserCloudmsg_2min.header.frame_id = "camera_init";
+            pub_2mins_Map.publish(laserCloudmsg_2min);
+        }
 
         static int scan_wait_num = 0;
         scan_wait_num ++;
         if (pcl_wait_save->size() > 0 && pcd_save_interval > 0  && scan_wait_num >= pcd_save_interval)
         {
             pcd_index ++;
-            string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") + to_string(pcd_index) + string(".pcd"));
+            // string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") + to_string(pcd_index) + string(".pcd"));
+            string file_name = "latest_2min_map" + std::to_string(ros::Time::now().toSec()) +"_" + to_string(pcd_index) + ".pcd"; //string("dense_map.pcd");
+            string all_points_dir = "/ssd/dataset/map/" + file_name;
             pcl::PCDWriter pcd_writer;
             cout << "current scan saved to /PCD/" << all_points_dir << endl;
             pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
@@ -841,6 +858,9 @@ int main(int argc, char** argv)
     ros::Subscriber sub_imu = nh.subscribe(imu_topic, 200000, imu_cbk);
     ros::Publisher pubLaserCloudFull = nh.advertise<sensor_msgs::PointCloud2>
             ("/cloud_registered", 100000);
+    pub_2mins_Map = nh.advertise<sensor_msgs::PointCloud2>
+            ("/map_latest_2min", 1);
+
     ros::Publisher pubLaserCloudFull_body = nh.advertise<sensor_msgs::PointCloud2>
             ("/cloud_registered_body", 100000);
     ros::Publisher pubLaserCloudEffect = nh.advertise<sensor_msgs::PointCloud2>
